@@ -1,0 +1,177 @@
+<!-- templates/markers_view.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Карта с маркерами изменений</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        #canvas {
+            max-width: 100vw;
+            max-height: 100vh;
+            display: block;
+            cursor: pointer;
+        }
+        #tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: #0f0;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 15px;
+            line-height: 1.5;
+            pointer-events: none;
+            z-index: 1000;
+            display: none;
+            max-width: 320px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+            border: 1px solid #0a0;
+        }
+        #tooltip strong {
+            color: #fff;
+            display: block;
+            margin-bottom: 4px;
+        }
+        #tooltip em {
+            color: #afa;
+            font-style: normal;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="tooltip"></div>
+
+    <script>
+        const imageSrc = "{{ image_url }}";
+        const records = {{ records | tojson }};
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const tooltip = document.getElementById('tooltip');
+
+        const BASE_RADIUS = 200;
+        const HOVER_RADIUS = 240;
+
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = function() {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            drawAllMarkers(BASE_RADIUS);
+        };
+        img.src = imageSrc;
+
+        function drawMarker(x, y, radius, isHovered = false) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = isHovered ? 'rgba(0, 255, 0, 0.35)' : 'rgba(0, 255, 0, 0.25)';
+            ctx.fill();
+            ctx.strokeStyle = isHovered ? '#0f0' : '#0a0';
+            ctx.lineWidth = isHovered ? 4 : 3;
+            ctx.stroke();
+        }
+
+        function drawAllMarkers(baseRadius, hoveredIndex = -1) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+            records.forEach((rec, idx) => {
+                const radius = (idx === hoveredIndex) ? HOVER_RADIUS : baseRadius;
+                drawMarker(rec.x, rec.y, radius, idx === hoveredIndex);
+            });
+        }
+
+        let hoveredIndex = -1;
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            let newHovered = -1;
+            const detectionRadius = HOVER_RADIUS + 20;
+            for (let i = 0; i < records.length; i++) {
+                const rec = records[i];
+                const dx = x - rec.x;
+                const dy = y - rec.y;
+                if (dx * dx + dy * dy <= detectionRadius * detectionRadius) {
+                    newHovered = i;
+                    break;
+                }
+            }
+
+            if (newHovered !== hoveredIndex) {
+                hoveredIndex = newHovered;
+                drawAllMarkers(BASE_RADIUS, hoveredIndex);
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            if (hoveredIndex !== -1) {
+                hoveredIndex = -1;
+                drawAllMarkers(BASE_RADIUS);
+            }
+        });
+
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            const clickRadius = HOVER_RADIUS + 30;
+            for (let i = 0; i < records.length; i++) {
+                const rec = records[i];
+                const dx = x - rec.x;
+                const dy = y - rec.y;
+                if (dx * dx + dy * dy <= clickRadius * clickRadius) {
+                    let text = `<strong>Координаты: (${rec.x}, ${rec.y})</strong>`;
+
+                    if (rec.was && rec.was !== "Отсутствует") {
+                        text += `<br><em>Было:</em> ${rec.was}`;
+                        if (rec.type_was) text += ` (${rec.type_was})`;
+                    } else if (!rec.was || rec.was === "Отсутствует") {
+                        text += `<br><em>Было:</em> —`;
+                    }
+
+                    if (rec.became && rec.became !== "Отсутствует") {
+                        text += `<br><em>Стало:</em> ${rec.became}`;
+                        if (rec.type_became) text += ` (${rec.type_became})`;
+                    } else if (!rec.became || rec.became === "Отсутствует") {
+                        text += `<br><em>Стало:</em> —`;
+                    }
+
+                    tooltip.innerHTML = text;
+                    tooltip.style.left = (e.clientX + 15) + 'px';
+                    tooltip.style.top = (e.clientY + 15) + 'px';
+                    tooltip.style.display = 'block';
+
+                    setTimeout(() => {
+                        if (tooltip.style.display !== 'none') {
+                            tooltip.style.display = 'none';
+                        }
+                    }, 8000);
+
+                    return;
+                }
+            }
+
+            tooltip.style.display = 'none';
+        });
+    </script>
+</body>
+</html>
